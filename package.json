@@ -1,0 +1,11 @@
+{
+  "name": "poji's-chatroom-booths",
+  "version": "0.0.1",
+  "description": "connect with likeminded individuals and share",
+  "type": "module",
+  "repository": "https://github.com/RogersKaran/pojis-chatroom-booths",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
