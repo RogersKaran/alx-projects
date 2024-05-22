@@ -6,6 +6,7 @@
   "repository": "https://github.com/RogersKaran/pojis-chatroom-booths",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
   }
 }
