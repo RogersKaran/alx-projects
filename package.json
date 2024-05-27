@@ -19,5 +19,11 @@
     "socket.io-redis": "^6.1.1",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo 'No tests specified'",
+    "start-chat": "node start-chat.js"
   }
 }
+

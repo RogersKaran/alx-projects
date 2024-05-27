@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { join, dirname } = require('path');
-const { fileURLToPath } = require('url');
 const sqlite3 = require('sqlite3').verbose();
 const redisAdapter = require('socket.io-redis');
 const redis = require('redis');
@@ -10,18 +9,9 @@ const pub = redis.createClient();
 const sub = redis.createClient();
 const adapter = redisAdapter({ pubClient: pub, subClient: sub });
 
-io.adapter(adapter);
-
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  adapter: redisAdapter({
-    host: 'localhost',
-    port: 6379,
-  }),
-});
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const io = new Server(server, { adapter });
 
 // open the database file
 const db = new sqlite3.Database('chat.db');
@@ -39,14 +29,13 @@ app.get('/', (req, res) => {
   res.sendFile(join(__dirname, 'index.html'));
 });
 
-io.on('connection', async (socket) => {
-  let lastEventId = null;
+let lastEventId = null;
 
+io.on('connection', async (socket) => {
   socket.on('chat message', async (msg, clientOffset, callback) => {
     try {
-      const result = await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg, clientOffset);
-      io.emit('chat message', msg, result.lastID);
-      // acknowledge the event 
+     await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg, clientOffset);
+      io.emit('chat message', msg);
       callback();
       
       // Store the message in the database
@@ -79,78 +68,23 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('*', (event, ...args) => {
-   console.log(`Received event: ${event}`);
-   console.log(`Arguments: ${args}`);
-  });
-
-  io.on('connection', (socket) => {
-    socket.on('join room', (roomId) => {
-      socket.join(roomId);
-    });
-
-    socket.on('message', (roomId, msg) => {
-      io.to(roomId).emit('message', msg);
-    });
-  });
-
-io.on('connection', (socket) => {
-  socket.on('broadcast', (msg) => {
-    io.emit('broadcast', msg);
-   });
-  });
-
-  // Example: Join specific rooms
-  io.on('connection', (socket) => {
-    socket.on('join', (room) => {
-      socket.join(room);
-      console.log(`${socket.id} joined room: ${room}`);
-    });
-
-    socket.on('leave', (room) => {
-      socket.leave(room);
-      console.log(`${socket.id} left room: ${room}`);
-    });
-  })
-
-  io.on('connection', async (socket) => {
-    socket.on('chat message', async (msg, clientOffset, callback) => {
-      try {
-        await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg, clientOffset);
-        io.emit('chat message', msg);
-        callback();
-      } catch (e) {
-        if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
-          callback();
-        } else {
-          // nothing to do, just let the client retry
-        }
-      }
-    });
-  });
-
-  io.on('connection', (socket) => {
-    socket.on('sync', (clientLastEventId) => {
-      const missingPieces = getMissingPieces(clientLastEventId);
-      socket.emit('missing pieces', missingPieces);
-    });
-  });
-
   function getMissingPieces(clientLastEventId) {
-    const missingPieces = [];
-    db.each(
-      'SELECT id, content FROM messages WHERE id > ?',
-      [clientLastEventId],
-      (_err, row) => {
-      missingPieces.push({ id: row.id, content: row.content });
-      },
-      () => {
-        resolve(missingPieces);
-      }
-    );
+    return new Promise((resolve) +> {
+      const missingPieces = [];
+      db.each(
+        'SELECT id, content FROM messages WHERE id > ?',
+        [clientLastEventId],
+        (_err, row) => {
+        missingPieces.push({ id: row.id, content: row.content });
+        },
+        () => {
+          resolve(missingPieces);
+        }
+      );
+    });
   }
 
-  const port = process.env.PORT;
+  const port = process.env.PORT  || 3000;
 
   server.listen(port, () => {
     console.log(`server running at http://localhost:${port}`);

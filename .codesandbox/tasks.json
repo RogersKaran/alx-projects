@@ -1,0 +1,27 @@
+{
+  "setupTasks": [
+    {
+      "name": "Install Dependencies",
+      "command": "npm install"
+    }
+  ],
+  "tasks": {
+    "npm start": {
+      "name": "npm start",
+      "command": "npm start",
+      "runAtStart": true,
+      "preview": {
+        "port": 3000
+      }
+    },
+    "Start Chat Application": {
+       "name": "Start Chat Application",
+       "command": "npm run start-chat",
+       "runAtStart": false,
+       "preview": {
+         "port": 3000
+       }
+    }
+  }
+}
+
