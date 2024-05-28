@@ -34,20 +34,24 @@ let lastEventId = null;
 io.on('connection', async (socket) => {
   socket.on('chat message', async (msg, clientOffset, callback) => {
     try {
-     await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg, clientOffset);
-      io.emit('chat message', msg);
-      callback();
+      if (msg && msg.id) {
+        await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg, clientOffset);
+        io.emit('chat message', msg);
+        callback();
       
-      // Store the message in the database
-      await db.run('INSERT INTO messages (content) VALUES (?)', msg);
+        // Store the message in the database
+        await db.run('INSERT INTO messages (content) VALUES (?)', msg);
 
-      // Include the offset with the message
-      const result = await db.get('SELECT last_insert_rowid() AS id');
-      io.to(socket.id).emit('lastEventId', result.id);
+        // Include the offset with the message
+        const result = await db.get('SELECT last_insert_rowid() AS id');
+        io.to(socket.id).emit('lastEventId', result.id);
 
-      // Update the last event ID
-      lastEventId = msg.id;
-      socket.emit('lastEventId', lastEventId);
+        // Update the last event ID
+        lastEventId = result.id;
+        socket.emit('lastEventId', lastEventId);
+      } else {
+        console.error('Invalid message object:', msg);
+      }
     } catch (e) {
       if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
         // the message was already inserted, so we notify the client
@@ -59,16 +63,20 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('sync', (clientLastEventId) => {
-    if (lastEventId && clientLastEventId < lastEventId) {
-      // Retrieve the missing pieces from the server
-      const missingPieces = getMissingPieces(clientLastEventId);
+    if (clientLatEventId) {
+      if (lastEventId && clientLastEventId < lastEventId) {
+        // Retrieve the missing pieces from the server
+        const missingPieces = getMissingPieces(clientLastEventId);
 
-      // Send the missing pieces to the client
-      socket.emit('missing pieces', missingPieces);
+        // Send the missing pieces to the client
+        socket.emit('missing pieces', missingPieces);
+      }
+    } else {
+      console.error('Invalid clientLastEventId:', clientLastEventId);
     }
   });
 
-  function getMissingPieces(clientLastEventId) {
+  async function getMissingPieces(clientLastEventId) {
     return new Promise((resolve) +> {
       const missingPieces = [];
       db.each(
