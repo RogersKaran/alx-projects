@@ -73,7 +73,7 @@ io.on('connection', async (socket) => {
       } else {
         console.error('Invalid message object:', msg);
       }
-    })
+    }
     catch (e) {
       if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
         // the message was already inserted, so we notify the client
@@ -81,6 +81,22 @@ io.on('connection', async (socket) => {
       } else {
         // nothing to do, just let the client retry
       }
+    }
+  });
+
+  // Handle private messages
+  socket.on('private message', async (msg, clientOffset, receiver) => {
+    try {
+      if (msg && msg.content) {
+        // Store the message in the db
+        await db.run('INSERT INTO messages (content, sender, receiver) VALUES (?, ?, ?)', msg.content, socket.nickname, receiver);
+        // Emit the message to the receiver only
+        io.to(receiver).emit('private message', msg);
+      } else {
+        console.error('Invalid message object:', msg);
+      }
+    } catch (e) {
+      console.error('Error storing private message:', e);
     }
   });
 
@@ -101,12 +117,6 @@ io.on('connection', async (socket) => {
    // Handle typing events
   socket.on('typing', (typing) => {
     io.emit('typing', { nickname: socket.nickname, typing });
-  });
-
-  // Handle private messages
-  socket.on('private message', (msg, clientOffset, receiver) => {
-    // Send the message to the receiver only
-    io.to(receiver).emit('private message', msg);
   });
 
   async function getMissingPieces(clientLastEventId) {
