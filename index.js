@@ -35,7 +35,7 @@ io.on('connection', async (socket) => {
   socket.on('chat message', async (msg, clientOffset, callback) => {
     try {
       if (msg && msg.id) {
-        await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg, clientOffset);
+        await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg.content, clientOffset);
         io.emit('chat message', msg);
         callback();
       
@@ -52,7 +52,8 @@ io.on('connection', async (socket) => {
       } else {
         console.error('Invalid message object:', msg);
       }
-    } catch (e) {
+    })
+    catch (e) {
       if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
         // the message was already inserted, so we notify the client
         callback();
@@ -77,18 +78,30 @@ io.on('connection', async (socket) => {
   });
 
   async function getMissingPieces(clientLastEventId) {
-    return new Promise((resolve) +> {
+    if (!clientLastEventId) {
+      console.error('Invalid clientLastEventId:', clientLastEventId);
+      return [];
+    }
+
+    return new Promise((resolve, reject) => {
       const missingPieces = [];
-      db.each(
+      const query = db.all(
         'SELECT id, content FROM messages WHERE id > ?',
         [clientLastEventId],
-        (_err, row) => {
-        missingPieces.push({ id: row.id, content: row.content });
-        },
-        () => {
-          resolve(missingPieces);
+        (err, rows) => {
+           if (err) {
+             reject(err);
+           } else {
+             rows.forEach((row) => {
+               missingPieces.push({ id: row.id, content: row.content });
+             });
+             resolve(missingPieces);
+           }
         }
       );
+    }).catch((error) => {
+      console.error('Error retrieving missing pieces:', error);
+      throw error;
     });
   }
 
