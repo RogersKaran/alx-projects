@@ -30,13 +30,34 @@ app.get('/', (req, res) => {
 });
 
 let lastEventId = null;
+let onlineUsers = {};
 
 io.on('connection', async (socket) => {
+  // Broadcast a message when a user connects
+  socket.emit('chat message', 'A user connected');
+
+  // Broadcast a message when a user disconnects
+  socket.on('disconnect', () => {
+    socket.emit('chat message', 'A user disconnected');
+  });
+
+  // Handle nickname selection
+  socket.on('set nickname', (nickname) => {
+    socket.nickname = nickname;
+    onlineUsers[socket.id] = nickname;
+    io.emit('online users', onlineUsers);
+  });
+
+  
+  // Handle chat messages
   socket.on('chat message', async (msg, clientOffset, callback) => {
     try {
-      if (msg && msg.id) {
-        await db.run('INSERT INTO messages (content, client_offset) VALUES (?, ?)', msg.content, clientOffset);
+      if (msg && msg.content) {
+        // Store the message in the db
+        await db.run('INSERT INTO messages (content, sender, receiver) VALUES (?, ?, ?)', msg.content, socket.nickname, msg.receiver);
+        // Emit the message to all connected users
         io.emit('chat message', msg);
+        
         callback();
       
         // Store the message in the database
@@ -75,6 +96,17 @@ io.on('connection', async (socket) => {
     } else {
       console.error('Invalid clientLastEventId:', clientLastEventId);
     }
+  });
+
+   // Handle typing events
+  socket.on('typing', (typing) => {
+    io.emit('typing', { nickname: socket.nickname, typing });
+  });
+
+  // Handle private messages
+  socket.on('private message', (msg, clientOffset, receiver) => {
+    // Send the message to the receiver only
+    io.to(receiver).emit('private message', msg);
   });
 
   async function getMissingPieces(clientLastEventId) {
