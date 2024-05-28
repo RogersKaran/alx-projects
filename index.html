@@ -30,21 +30,22 @@
   	   serverOffset: 0
 	 },
 	 ackTimeout: 10000,
-	 retries: 3,
-	 auth: {
-           serverOffset: 0
-	 }
+	 retries: 3
        });
 
       const form = document.getElementById('form');
       const input = document.getElementById('input');
       const messages = document.getElementById('messages');
 
+      socket.on('connect_error', (error) => {
+        console.error('Socket connection error:', error);
+      });
+	    
       form.addEventListener('submit', (e) => {
         e.preventDefault();
         if (input.value) {
 	  const clientOffset = `${socket.id}-${counter++}`;
-          socket.emit('chat message', input.value);
+          socket.emit('chat message', { content: input.value, offset: clientOffset });
           input.value = '';
          }
       });
@@ -55,7 +56,6 @@
 	item.setAttribute('data-offset', offset);
         messages.appendChild(item);
         window.scrollTo(0, document.body.scrollHeight);
-	socket.auth.serverOffset = serverOffset;
       });
     </script>
   </body>
