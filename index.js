@@ -64,7 +64,7 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('sync', (clientLastEventId) => {
-    if (clientLatEventId) {
+    if (clientLastEventId) {
       if (lastEventId && clientLastEventId < lastEventId) {
         // Retrieve the missing pieces from the server
         const missingPieces = getMissingPieces(clientLastEventId);
