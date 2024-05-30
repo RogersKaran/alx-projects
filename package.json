@@ -22,10 +22,14 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node index.tests.js",
+    "test": "jest --env=node",
     "start-chat": "node start-chat.js"
   },
   "devDependencies": {
+    "@babel/core": "^7.24.6",
+    "@babel/preset-env": "^7.24.6",
+    "@babel/preset-react": "^7.24.6",
+    "babel-jest": "^29.7.0",
     "mocha": "^9.1.2"
   }
 }
