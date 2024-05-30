@@ -1,156 +1,150 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const { join, dirname } = require('path');
-const sqlite3 = require('sqlite3').verbose();
-const redisAdapter = require('socket.io-redis');
-const redis = require('redis');
-const pub = redis.createClient();
-const sub = redis.createClient();
-const adapter = redisAdapter({ pubClient: pub, subClient: sub });
+import React, { useState, useEffect } from 'react';
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { adapter });
+const Chat = () => {
+  const [onlineUsers, setOnlineUsers] = useState({});
+  const [lastEventId, setLastEventId] = useState(null);
+  const [socket, setSocket] = useState(null);
 
-// open the database file
-const db = new sqlite3.Database('chat.db');
+  useEffect(() => {
+    const initSocket = () => {
+      const socket = io.connect('http://localhost:3000');
 
-// create our 'messages' table (you can ignore the 'client_offset' column for now)
-db.run(`
-  CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_offset TEXT UNIQUE,
-    content TEXT
-  );
-`);
+      socket.on('connect', () => {
+        console.log('Connected!');
+        socket.emit('chat message', 'A user connected');
+      });
 
-app.get('/', (req, res) => {
-  res.sendFile(join(__dirname, 'index.html'));
-});
+      socket.on('disconnect', () => {
+        console.log('Disconnected!');
+        socket.emit('chat message', 'A user disconnected');
+      });
 
-let lastEventId = null;
-let onlineUsers = {};
+      socket.on('online users', (onlineUsers) => {
+        setOnlineUsers(onlineUsers);
+      });
 
-io.on('connection', async (socket) => {
-  // Broadcast a message when a user connects
-  socket.emit('chat message', 'A user connected');
+      socket.on('lastEventId', (lastEventId) => {
+        setLastEventId(lastEventId);
+      });
 
-  // Broadcast a message when a user disconnects
-  socket.on('disconnect', () => {
-    socket.emit('chat message', 'A user disconnected');
-  });
+      socket.on('missing pieces', (missingPieces) => {
+        console.log(missingPieces);
+      });
 
-  // Handle nickname selection
-  socket.on('set nickname', (nickname) => {
-    socket.nickname = nickname;
-    onlineUsers[socket.id] = nickname;
-    io.emit('online users', onlineUsers);
-  });
+      socket.on('typing', (typing) => {
+        console.log(typing);
+      });
 
-  
-  // Handle chat messages
-  socket.on('chat message', async (msg, clientOffset, callback) => {
-    try {
-      if (msg && msg.content) {
-        // Store the message in the db
-        await db.run('INSERT INTO messages (content, sender, receiver) VALUES (?, ?, ?)', msg.content, socket.nickname, msg.receiver);
-        // Emit the message to all connected users
-        io.emit('chat message', msg);
-        
-        callback();
-      
-        // Store the message in the database
-        await db.run('INSERT INTO messages (content) VALUES (?)', msg);
+      return () => {
+        socket.disconnect();
+      };
+    };
 
-        // Include the offset with the message
-        const result = await db.get('SELECT last_insert_rowid() AS id');
-        io.to(socket.id).emit('lastEventId', result.id);
+    initSocket();
+  }, []);
 
-        // Update the last event ID
-        lastEventId = result.id;
-        socket.emit('lastEventId', lastEventId);
-      } else {
-        console.error('Invalid message object:', msg);
-      }
+  const handleSetNickname = (nickname) => {
+    if (nickname === undefined || nickname === null) {
+      console.error('Invalid nickname:', nickname);
+      return;
     }
-    catch (e) {
-      if (e.errno === 19 /* SQLITE_CONSTRAINT */ ) {
+
+    socket.emit('set nickname', nickname);
+  };
+
+  const handleSendMessage = async (msg, clientOffset, callback) => {
+    if (
+      msg === undefined ||
+      msg === null ||
+      msg.content === undefined ||
+      msg.content === null ||
+      socket.nickname === undefined ||
+      socket.nickname === null
+    ) {
+      console.error('Invalid message object:', msg);
+      return;
+    }
+
+    try {
+      // Store the message in the db
+      await db.run('INSERT INTO messages (content, sender, receiver) VALUES (?, ?, ?)', msg.content, socket.nickname, msg.receiver);
+
+      // Emit the message to the receiver only
+      io.emit('private message', msg, clientOffset, msg.receiver);
+
+      callback();
+
+      // Include the offset with the message
+      const result = { id: lastEventId + 1 };
+      io.emit('lastEventId', result.id);
+
+      // Update the last event ID
+      setLastEventId(result.id);
+    } catch (error) {
+      console.error('Error storing message:', error);
+      if (error.errno === 19 /* SQLITE_CONSTRAINT */ ) {
         // the message was already inserted, so we notify the client
         callback();
       } else {
         // nothing to do, just let the client retry
       }
     }
-  });
+  };
 
-  // Handle private messages
-  socket.on('private message', async (msg, clientOffset, receiver) => {
+  const handlePrivateMessage = async (msg, clientOffset, receiver) => {
+    if (
+      msg === undefined ||
+      msg === null ||
+      msg.content === undefined ||
+      msg.content === null ||
+      socket.nickname === undefined ||
+      socket.nickname === null ||
+      receiver === undefined ||
+      receiver === null
+    ) {
+      console.error('Invalid message object:', msg);
+      return;
+    }
+
     try {
-      if (msg && msg.content) {
-        // Store the message in the db
-        await db.run('INSERT INTO messages (content, sender, receiver) VALUES (?, ?, ?)', msg.content, socket.nickname, receiver);
-        // Emit the message to the receiver only
-        io.to(receiver).emit('private message', msg);
-      } else {
-        console.error('Invalid message object:', msg);
-      }
-    } catch (e) {
-      console.error('Error storing private message:', e);
+      // Store the message in the db
+      await db.run('INSERT INTO messages (content, sender, receiver) VALUES (?, ?, ?)', msg.content, socket.nickname, receiver);
+
+      // Emit the message to the receiver only
+      io.emit('private message', msg, clientOffset, receiver);
+    } catch (error) {
+      console.error('Error storing private message:', error);
     }
-  });
+  };
 
-  socket.on('sync', (clientLastEventId) => {
-    if (clientLastEventId) {
-      if (lastEventId && clientLastEventId < lastEventId) {
-        // Retrieve the missing pieces from the server
-        const missingPieces = getMissingPieces(clientLastEventId);
-
-        // Send the missing pieces to the client
-        socket.emit('missing pieces', missingPieces);
-      }
-    } else {
+  const handleSync = (clientLastEventId) => {
+    if (clientLastEventId === undefined || clientLastEventId === null) {
       console.error('Invalid clientLastEventId:', clientLastEventId);
-    }
-  });
-
-   // Handle typing events
-  socket.on('typing', (typing) => {
-    io.emit('typing', { nickname: socket.nickname, typing });
-  });
-
-  async function getMissingPieces(clientLastEventId) {
-    if (!clientLastEventId) {
-      console.error('Invalid clientLastEventId:', clientLastEventId);
-      return [];
+      return;
     }
 
-    return new Promise((resolve, reject) => {
-      const missingPieces = [];
-      const query = db.all(
-        'SELECT id, content FROM messages WHERE id > ?',
-        [clientLastEventId],
-        (err, rows) => {
-           if (err) {
-             reject(err);
-           } else {
-             rows.forEach((row) => {
-               missingPieces.push({ id: row.id, content: row.content });
-             });
-             resolve(missingPieces);
-           }
-        }
-      );
-    }).catch((error) => {
-      console.error('Error retrieving missing pieces:', error);
-      throw error;
-    });
-  }
+    if (lastEventId === undefined || lastEventId === null) {
+      console.error('Invalid lastEventId:', lastEventId);
+      return;
+    }
 
-  const port = process.env.PORT  || 3000;
+    if (clientLastEventId < lastEventId) {
+      // Retrieve the missing pieces from the server
+      io.emit('sync', clientLastEventId);
+    }
+  };
 
-  server.listen(port, () => {
-    console.log(`server running at http://localhost:${port}`);
-  });
-}
+  return (
+    <div>
+      <h1>Chat</h1>
+      <p>Online users: {Object.keys(onlineUsers).map((id) => `${onlineUsers[id]}`).join(', ')}</p>
+      <input type="text" id="nickname" placeholder="Nickname" onChange={(e) => handleSetNickname(e.target.value)} />
+      <input type="text" id="message" placeholder="Message" onChange={(e) => (msg)} />
+      <button onClick={() => handleSendMessage({ content: document.getElementById('message').value, receiver: '' }, null, () => console.log('Sent!'))}>Send</button>
+      <button onClick={() => handlePrivateMessage({ content: document.getElementById('message').value, receiver: '' }, null, 'user2')}>Send private</button>
+      <button onClick={() => handleSync(2)}>Sync</button>
+    </div>
+  );
+};
 
+export default Chat;
