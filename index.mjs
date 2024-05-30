@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 
 const Chat = () => {
   const [onlineUsers, setOnlineUsers] = useState({});
@@ -123,15 +124,28 @@ const Chat = () => {
       return;
     }
 
-    if (lastEventId === undefined || lastEventId === null) {
-      console.error('Invalid lastEventId:', lastEventId);
+    // Emit the sync request to the server
+    socket.emit('sync', clientLastEventId);
+  };
+
+  const handleMissingPieces = (pieces) => {
+    if (pieces === undefined || pieces === null) {
+      console.error('Invalid pieces:', pieces);
       return;
     }
 
-    if (clientLastEventId < lastEventId) {
-      // Retrieve the missing pieces from the server
-      io.emit('sync', clientLastEventId);
+    // Emit the missing pieces to the server
+    socket.emit('missing pieces', pieces);
+  };
+
+  const handleTyping = (typing) => {
+    if (typing === undefined || typing === null) {
+      console.error('Invalid typing:', typing);
+      return;
     }
+
+    // Emit the typing event to the server
+    socket.emit('typing', typing);
   };
 
   return (
