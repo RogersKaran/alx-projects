@@ -22,7 +22,10 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "echo 'No tests specified'",
+    "test": "node index.tests.js",
     "start-chat": "node start-chat.js"
+  },
+  "devDependencies": {
+    "mocha": "^9.1.2"
   }
 }
